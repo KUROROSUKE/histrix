@@ -17,8 +17,12 @@
     thead{background:#def;}
     #board{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;min-height:64px;}
     .card{padding:12px 16px;border:2px solid #333;border-radius:8px;background:#fff;min-width:140px;text-align:center;font-weight:bold;position:relative;}
-    .slot{width:20px;height:52px;border:2px dashed #aaa;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+    .slot{width:20px;height:52px;border:2px dashed #aaa;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .3s;}
     .slot:hover{background:#eef;}
+    /* ✨ 追加: 不正解時のハイライト用 */
+    .slot.wrong{background:#fdd;}
+    .slot.correct{background:#88f;}
+
     #hand{display:flex;justify-content:center;margin-top:24px;min-height:80px;}
     #hand .card{background:#ffd;cursor:default;}
     .btn-danger{color:red;cursor:pointer;}
@@ -238,7 +242,7 @@ function showNextCard(){
 function createSlot(index){
   const slot = document.createElement("div");
   slot.className = "slot";
-  slot.textContent = "▼";
+  slot.textContent = " ";
   slot.onclick = () => insertAt(index, slot);
   return slot;
 }
@@ -280,6 +284,16 @@ function animateCardMove(cardElem, targetElem, done){
   };
 }
 
+/*
+ * ✨ 正しい位置を赤くハイライトする補助関数
+ */
+function highlightCorrectSlot(index){
+  const slots = [...boardDiv.querySelectorAll('.slot')];
+  if(slots[index]){
+    slots[index].classList.add('correct');
+  }
+}
+
 function insertAt(index, slotElem){
   if(!gameActive || !currentCard) return;
   slotElem.onclick = null;
@@ -291,6 +305,14 @@ function insertAt(index, slotElem){
   const okNext = !next || v <= next.value;
 
   if(!okPrev || !okNext){
+    /* ❌ 不正解の処理: クリックしたスロットを淡い赤にし、正しいスロットを点滅させる */
+    slotElem.classList.add('wrong');
+
+    // 正しい挿入インデックスを算出
+    let correctIndex = board.findIndex(c => c.value > v);
+    if(correctIndex === -1) correctIndex = board.length;
+    highlightCorrectSlot(correctIndex);
+
     messageDiv.textContent = "不正解！ゲーム終了。スコア: " + score;
     gameActive = false;
     hand.innerHTML = "";
