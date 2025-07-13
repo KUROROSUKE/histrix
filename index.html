@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>カード並べゲーム（保存・読込・削除・整形対応）</title>
+  <title>カード並べゲーム（保存・読込・削除・整形対応＋URL対応）</title>
   <style>
     body{font-family:sans-serif;margin:0;display:flex;flex-direction:column;min-height:100vh;padding-bottom:56px;}
     main{flex:1;overflow:auto;padding:16px;}
@@ -37,6 +37,8 @@
       <button id="saveBtn">保存</button>
       <button id="loadBtn">読込</button>
       <input type="file" id="loadFile" accept=".json" style="display:none;">
+      <input id="loadUrl" placeholder="JSONのURL" style="min-width:300px;">
+      <button id="loadFromUrlBtn">URL読込</button>
     </div>
     <table>
       <thead><tr><th>カード</th><th>日付</th><th>正答率</th><th>削除</th></tr></thead>
@@ -59,7 +61,6 @@
 
 <script>
 const initialEvents = [];
-
 let Questions = initialEvents.map(e => ({...e, correct:0, appear:0}));
 
 const questionTag = document.getElementById("question");
@@ -70,6 +71,8 @@ const addBtn = document.getElementById("addBtn");
 const saveBtn = document.getElementById("saveBtn");
 const loadBtn = document.getElementById("loadBtn");
 const loadFile = document.getElementById("loadFile");
+const loadUrl = document.getElementById("loadUrl");
+const loadFromUrlBtn = document.getElementById("loadFromUrlBtn");
 const tableBody = document.getElementById("questions_body");
 const hand = document.getElementById("hand");
 const boardDiv = document.getElementById("board");
@@ -83,8 +86,50 @@ const gameSection = document.getElementById("gameSection");
 
 navGame.onclick = () => switchSection('game');
 navAdmin.onclick = () => switchSection('admin');
-
 loadBtn.onclick = () => loadFile.click();
+
+loadFile.onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (Array.isArray(data)) {
+        Questions = data;
+        updateQuestionsTable();
+        alert("読み込み完了！");
+      } else {
+        alert("形式が正しくありません");
+      }
+    } catch (e) {
+      alert("JSON読み込み失敗");
+    }
+  };
+  reader.readAsText(file);
+};
+
+loadFromUrlBtn.onclick = async () => {
+  const url = loadUrl.value.trim();
+  if (!url) {
+    alert("URLを入力してください");
+    return;
+  }
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("取得失敗");
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      Questions = data;
+      updateQuestionsTable();
+      alert("URLからの読み込み完了！");
+    } else {
+      alert("形式が正しくありません");
+    }
+  } catch (err) {
+    alert("読み込みエラー: " + err.message);
+  }
+};
 
 function switchSection(target){
   if(target === 'admin'){
@@ -94,7 +139,7 @@ function switchSection(target){
     navGame.classList.remove('active');
     navBar.style.display = 'flex';
     updateQuestionsTable();
-  }else{
+  } else {
     adminSection.style.display = 'none';
     gameSection.style.display = 'block';
     navAdmin.classList.remove('active');
@@ -126,7 +171,7 @@ function updateQuestionsTable(){
 }
 
 function deleteQuestion(index){
-  if(confirm("削除しますか？")){
+  if (confirm("削除しますか？")) {
     Questions.splice(index, 1);
     updateQuestionsTable();
   }
@@ -155,27 +200,6 @@ saveBtn.onclick = () => {
   a.download = "quiz_data.json";
   a.click();
   URL.revokeObjectURL(url);
-};
-
-loadFile.onchange = e => {
-  const file = e.target.files[0];
-  if(!file)return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const data = JSON.parse(reader.result);
-      if(Array.isArray(data)){
-        Questions = data;
-        updateQuestionsTable();
-        alert("読み込み完了！");
-      }else{
-        alert("形式が正しくありません");
-      }
-    } catch(e){
-      alert("JSON読み込み失敗");
-    }
-  };
-  reader.readAsText(file);
 };
 
 let deck = [], board = [], currentCard = null, gameActive = false, score = 0;
@@ -258,8 +282,7 @@ function animateCardMove(cardElem, targetElem, done){
 
 function insertAt(index, slotElem){
   if(!gameActive || !currentCard) return;
-
-  slotElem.onclick = null; // ✅ 多重クリック防止
+  slotElem.onclick = null;
 
   const prev = board[index-1];
   const next = board[index];
