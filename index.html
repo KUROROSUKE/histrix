@@ -60,7 +60,7 @@
   <main>
     <div class="row small">
       <span>ドラッグ＆ドロップで早い順に並べる。</span>
-      <span>独自データは右上のJSON読込で投入可能。</span>
+      <span>JSONを読み込むか、同梱のデフォルトを使う。</span>
     </div>
 
     <div id="board" class="board"></div>
@@ -175,7 +175,7 @@
 
     function newQuiz() {
       if (!DATA.length) {
-        msg("先にJSONを読み込んでください");
+        msg("先にJSONを読み込むか、デフォルトを使用してください");
         return;
       }
       const n = parseInt(sizeSel.value, 10);
@@ -225,21 +225,14 @@
     document.getElementById("btnAdd").addEventListener("click", () => {
       const text = document.getElementById("addText").value.trim();
       const y = parseInt(document.getElementById("addY").value.trim());
-      const m = parseInt(document.getElementById("addM").value.trim() || "1", 10);
-      const d = parseInt(document.getElementById("addD").value.trim() || "1", 10);
+      const m = parseInt((document.getElementById("addM").value.trim() || "1"), 10);
+      const d = parseInt((document.getElementById("addD").value.trim() || "1"), 10);
       if (!text || !y || m<1 || m>12 || d<1 || d>31) { msg("入力エラー", false); return; }
       const val = y*10000 + m*100 + d;
-      DATA.push({text, value: val});
+      DATA.push({text, value: String(val).padStart(8,"0")});
       msg("追加した。");
       render();
     });
-
-    // buttons
-    btnNew.addEventListener("click", newQuiz);
-    btnCheck.addEventListener("click", check);
-    btnReveal.addEventListener("click", reveal);
-    yearOnlyMode.addEventListener("change", render);
-    hideDate.addEventListener("change", render);
 
     // sanitize data
     function sanitize(arr){
@@ -249,15 +242,15 @@
                 .sort((a,b)=>a.value-b.value);
     }
     function normalize(v){
-      let s = String(v).trim(); s = s.replace(/[^0-9]/g, '');
-      if (s.length===7) s = "0"+s;      // pad year
+      let s = String(v).trim().replace(/[^0-9]/g, '');
+      if (s.length===7) s = "0"+s;
       if (s.length!==8) return null;
       const y = +s.slice(0,4), m = +s.slice(4,6), d = +s.slice(6,8);
       if (m<1 || m>12 || d<1 || d>31) return null;
-      return +(s);
+      return +s;
     }
 
-    // default dataset fetch
+    // default dataset fetch (local bundled)
     fetch("middle_school_history.json").then(r=>{
       if (!r.ok) throw new Error("no default");
       return r.json();
