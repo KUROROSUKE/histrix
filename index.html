@@ -1,338 +1,273 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>カード並べゲーム</title>
-  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>年表ならべ（日本史・世界史）</title>
   <style>
-    body{font-family:sans-serif;margin:0;display:flex;flex-direction:column;min-height:100vh;padding-bottom:56px;}
-    main{flex:1;overflow:auto;padding:16px;}
-    #adminSection,#gameSection{max-width:900px;margin:0 auto;}
-    nav{position:fixed;bottom:0;left:0;width:100%;height:56px;display:flex;background:#333;color:#fff;}
-    nav button{flex:1;background:none;border:none;color:#fff;font-size:1rem;padding:12px 0;cursor:pointer;}
-    nav button.active,nav button:hover{background:#555;}
-    #controls{margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
-    #controls input,#controls button{font-size:1rem;padding:6px 12px;min-width:120px;box-sizing:border-box;}
-    table{border-collapse:collapse;width:100%;}
-    th,td{border:1px solid #999;padding:4px;text-align:center;}
-    thead{background:#def;}
-    #board{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;min-height:64px;}
-    .card{padding:12px 16px;border:2px solid #333;border-radius:8px;background:#fff;min-width:140px;text-align:center;font-weight:bold;position:relative;}
-    .slot{width:20px;height:52px;border:2px dashed #aaa;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .3s;}
-    .slot:hover{background:#eef;}
-    /* ✨ 追加: 不正解時のハイライト用 */
-    .slot.wrong{background:#fdd;}
-    .slot.correct{background:#88f;}
-
-    #hand{display:flex;justify-content:center;margin-top:24px;min-height:80px;}
-    #hand .card{background:#ffd;cursor:default;}
-    .btn-danger{color:red;cursor:pointer;}
+    :root { --bg:#0b0c10; --card:#1f2833; --text:#c5c6c7; --accent:#66fcf1; --muted:#45a29e; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+    header { padding:16px 20px; display:flex; gap:12px; align-items:center; border-bottom:1px solid #2b3642; position:sticky; top:0; background:rgba(11,12,16,.9); backdrop-filter: blur(6px); }
+    h1 { margin:0; font-size:18px; color:var(--accent); }
+    .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    button, input[type="file"], select { background:var(--card); color:var(--text); border:1px solid #2b3642; padding:8px 10px; border-radius:10px; cursor:pointer; }
+    button:hover { border-color: var(--muted); }
+    main { max-width:1100px; margin:0 auto; padding:20px; }
+    .row { display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+    .board { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; margin-top:16px; }
+    .card { background:var(--card); border:1px solid #2b3642; border-radius:14px; padding:12px; user-select:none; }
+    .card.dragging { opacity:0.65; outline:2px dashed var(--accent); }
+    .slot { background:#12161c; border:1px dashed #2b3642; border-radius:14px; padding:18px; text-align:center; color:#7f8b98; }
+    .slot.hover { border-color: var(--muted); color: var(--muted); }
+    .meta { font-size:12px; color:#9aa6b2; }
+    .title { font-weight:600; line-height:1.4; }
+    .footer { margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .pill { font-size:12px; padding:4px 8px; border:1px solid #2b3642; border-radius:999px; }
+    .ok { color:#0fd08a; border-color:#0fd08a55; }
+    .ng { color:#ff6b6b; border-color:#ff6b6b55; }
+    .msg { margin-top:10px; min-height:22px; }
+    .hidden { display:none; }
+    .small { font-size:12px; color:#9aa6b2; }
+    .flex { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   </style>
 </head>
 <body>
-<main>
-  <section id="adminSection">
-    <h1>クイズ編集</h1>
-    <div id="controls">
-      <input id="question" placeholder="カードのテキスト">
-      <input id="year" placeholder="年 (例: 1945)">
-      <input id="month" placeholder="月 (例: 8)">
-      <input id="day" placeholder="日 (例: 15)">
-      <button id="addBtn">追加</button>
-      <button id="saveBtn">保存</button>
-      <button id="loadBtn">読込</button>
-      <input type="file" id="loadFile" accept=".json" style="display:none;">
-      <input id="loadUrl" placeholder="JSONのURL" style="min-width:300px;">
-      <button id="loadFromUrlBtn">URL読込</button>
+  <header>
+    <h1>年表ならべ</h1>
+    <div class="controls">
+      <button id="btnNew">新しい問題</button>
+      <select id="sizeSel" title="カード数">
+        <option value="4">4枚</option>
+        <option value="5" selected>5枚</option>
+        <option value="6">6枚</option>
+        <option value="8">8枚</option>
+      </select>
+      <button id="btnCheck">並びを採点</button>
+      <button id="btnReveal">正解順を表示</button>
+      <label class="small">
+        <input type="checkbox" id="yearOnlyMode" />
+        年だけ表示（1日補完）
+      </label>
+      <label class="small">
+        <input type="checkbox" id="hideDate" />
+        日付を隠して暗記
+      </label>
+      <input type="file" id="file" accept=".json" />
+      <a id="dl" class="pill" download="export.json">→ 現在の問題をJSONで保存</a>
     </div>
-    <table>
-      <thead><tr><th>カード</th><th>日付</th><th>正答率</th><th>削除</th></tr></thead>
-      <tbody id="questions_body"></tbody>
-    </table>
-  </section>
+  </header>
 
-  <section id="gameSection" style="display:none;">
-    <h1>カード並べゲーム</h1>
-    <div id="board"></div>
-    <div id="hand"></div>
-    <div id="message"></div>
-  </section>
-</main>
+  <main>
+    <div class="row small">
+      <span>ドラッグ＆ドロップで早い順に並べる。</span>
+      <span>独自データは右上のJSON読込で投入可能。</span>
+    </div>
 
-<nav id="bottomNav">
-  <button id="navGame">ゲーム開始</button>
-  <button id="navAdmin" class="active">クイズ編集</button>
-</nav>
+    <div id="board" class="board"></div>
 
-<script>
-const initialEvents = [];
-let Questions = initialEvents.map(e => ({...e, correct:0, appear:0}));
+    <div class="footer">
+      <span id="score" class="pill">0 / 0</span>
+      <span id="time" class="pill">00:00</span>
+      <span id="accuracy" class="pill">正答率 0%</span>
+    </div>
 
-const questionTag = document.getElementById("question");
-const yearTag = document.getElementById("year");
-const monthTag = document.getElementById("month");
-const dayTag = document.getElementById("day");
-const addBtn = document.getElementById("addBtn");
-const saveBtn = document.getElementById("saveBtn");
-const loadBtn = document.getElementById("loadBtn");
-const loadFile = document.getElementById("loadFile");
-const loadUrl = document.getElementById("loadUrl");
-const loadFromUrlBtn = document.getElementById("loadFromUrlBtn");
-const tableBody = document.getElementById("questions_body");
-const hand = document.getElementById("hand");
-const boardDiv = document.getElementById("board");
-const messageDiv = document.getElementById("message");
+    <div id="message" class="msg"></div>
 
-const navBar = document.getElementById("bottomNav");
-const navGame = document.getElementById("navGame");
-const navAdmin = document.getElementById("navAdmin");
-const adminSection = document.getElementById("adminSection");
-const gameSection = document.getElementById("gameSection");
+    <details style="margin-top:18px;">
+      <summary>カード追加（任意）</summary>
+      <div class="row flex">
+        <input id="addText" placeholder="出来事（例：大阪夏の陣終結）" size="32" />
+        <input id="addY" placeholder="年 例: 1615" size="6" />
+        <input id="addM" placeholder="月 例: 6（空=1）" size="4" />
+        <input id="addD" placeholder="日 例: 4（空=1）" size="4" />
+        <button id="btnAdd">追加</button>
+      </div>
+    </details>
+  </main>
 
-navGame.onclick = () => switchSection('game');
-navAdmin.onclick = () => switchSection('admin');
-loadBtn.onclick = () => loadFile.click();
-
-loadFile.onchange = e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const data = JSON.parse(reader.result);
-      if (Array.isArray(data)) {
-        Questions = data;
-        updateQuestionsTable();
-        alert("読み込み完了！");
-      } else {
-        alert("形式が正しくありません");
+  <script>
+    // --- Utility ---
+    const pad2 = n => String(n).padStart(2, "0");
+    const toYMD = (val) => {
+      const s = String(val).padStart(8, "0");
+      const y = +s.slice(0,4), m = +s.slice(4,6), d = +s.slice(6,8);
+      return {y, m, d};
+    };
+    const dateToString = (val, yearOnly=false, hide=false) => {
+      const {y, m, d} = toYMD(val);
+      if (hide) return "????年??月??日";
+      if (yearOnly || (m===1 && d===1)) return `${y}年`;
+      return `${y}年${m}月${d}日`;
+    };
+    const shuffle = (arr) => {
+      const a = arr.slice();
+      for (let i=a.length-1; i>0; i--) {
+        const j = Math.floor(Math.random()*(i+1));
+        [a[i], a[j]] = [a[j], a[i]];
       }
-    } catch (e) {
-      alert("JSON読み込み失敗");
+      return a;
+    };
+
+    // --- State ---
+    let DATA = [];          // 全データ
+    let quiz = [];          // 今回の問題カード
+    let startTs = 0;
+    let solved = 0, total = 0;
+
+    const boardEl = document.getElementById("board");
+    const msgEl = document.getElementById("message");
+    const scoreEl = document.getElementById("score");
+    const accEl = document.getElementById("accuracy");
+    const timeEl = document.getElementById("time");
+    const sizeSel = document.getElementById("sizeSel");
+    const btnNew = document.getElementById("btnNew");
+    const btnCheck = document.getElementById("btnCheck");
+    const btnReveal = document.getElementById("btnReveal");
+    const fileEl = document.getElementById("file");
+    const dlEl = document.getElementById("dl");
+    const yearOnlyMode = document.getElementById("yearOnlyMode");
+    const hideDate = document.getElementById("hideDate");
+
+    // --- Drag & Drop ---
+    let dragIndex = -1;
+    function render() {
+      boardEl.innerHTML = "";
+      quiz.forEach((c, i) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.draggable = true;
+        card.dataset.index = i;
+        card.innerHTML = `
+          <div class="meta">${dateToString(c.value, yearOnlyMode.checked, hideDate.checked)}</div>
+          <div class="title">${c.text}</div>
+        `;
+        card.addEventListener("dragstart", e => {
+          dragIndex = i;
+          card.classList.add("dragging");
+          e.dataTransfer.effectAllowed = "move";
+        });
+        card.addEventListener("dragend", () => card.classList.remove("dragging"));
+        card.addEventListener("dragover", (e) => e.preventDefault());
+        card.addEventListener("drop", (e) => {
+          e.preventDefault();
+          const to = i;
+          if (dragIndex === -1 || dragIndex === to) return;
+          const item = quiz.splice(dragIndex, 1)[0];
+          quiz.splice(to, 0, item);
+          dragIndex = -1;
+          render();
+        });
+        boardEl.appendChild(card);
+      });
+
+      // export link
+      dlEl.href = "data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(quiz, null, 2));
+      scoreEl.textContent = `${solved} / ${total}`;
+      const acc = total ? Math.round((solved/total)*100) : 0;
+      accEl.textContent = `正答率 ${acc}%`;
+      if (startTs) {
+        const sec = Math.floor((Date.now()-startTs)/1000);
+        const mm = String(Math.floor(sec/60)).padStart(2,"0");
+        const ss = String(sec%60).padStart(2,"0");
+        timeEl.textContent = `${mm}:${ss}`;
+      }
     }
-  };
-  reader.readAsText(file);
-};
 
-loadFromUrlBtn.onclick = async () => {
-  const url = loadUrl.value.trim();
-  if (!url) {
-    alert("URLを入力してください");
-    return;
-  }
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error("取得失敗");
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      Questions = data;
-      updateQuestionsTable();
-      alert("URLからの読み込み完了！");
-    } else {
-      alert("形式が正しくありません");
+    function newQuiz() {
+      if (!DATA.length) {
+        msg("先にJSONを読み込んでください");
+        return;
+      }
+      const n = parseInt(sizeSel.value, 10);
+      quiz = shuffle(DATA).slice(0, n);
+      startTs = Date.now();
+      msg("");
+      render();
     }
-  } catch (err) {
-    alert("読み込みエラー: " + err.message);
-  }
-};
 
-function switchSection(target){
-  if(target === 'admin'){
-    adminSection.style.display = 'block';
-    gameSection.style.display = 'none';
-    navAdmin.classList.add('active');
-    navGame.classList.remove('active');
-    navBar.style.display = 'flex';
-    updateQuestionsTable();
-  } else {
-    adminSection.style.display = 'none';
-    gameSection.style.display = 'block';
-    navAdmin.classList.remove('active');
-    navGame.classList.add('active');
-    startGame();
-  }
-}
+    function check() {
+      if (!quiz.length) return;
+      total++;
+      const correct = quiz.slice().sort((a,b)=>a.value-b.value).map(e=>e.text).join("|");
+      const now = quiz.map(e=>e.text).join("|");
+      if (correct === now) {
+        solved++;
+        msg("正解", true);
+      } else {
+        msg("不正解。→ 正解順を表示で確認", false);
+      }
+      render();
+    }
 
-function dateToString(val){
-  const str = val.toString();
-  const y = str.slice(0,4);
-  const m = parseInt(str.slice(4,6));
-  const d = parseInt(str.slice(6,8));
-  return `${y}年${m}月${d}日`;
-}
+    function reveal() {
+      if (!quiz.length) return;
+      quiz = quiz.slice().sort((a,b)=>a.value-b.value);
+      render();
+    }
 
-function updateQuestionsTable(){
-  tableBody.innerHTML = "";
-  Questions.forEach((q, i)=>{
-    const rate = q.appear > 0 ? `${Math.round(q.correct / q.appear * 100)}% (${q.appear})` : "-";
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${q.text}</td>
-      <td>${dateToString(q.value)}</td>
-      <td>${rate}</td>
-      <td><span class="btn-danger" onclick="deleteQuestion(${i})">削除</span></td>`;
-    tableBody.appendChild(tr);
-  });
-}
+    function msg(t, ok=null) {
+      msgEl.textContent = t;
+      msgEl.className = "msg" + (ok===true? " ok" : ok===false? " ng" : "");
+    }
 
-function deleteQuestion(index){
-  if (confirm("削除しますか？")) {
-    Questions.splice(index, 1);
-    updateQuestionsTable();
-  }
-}
+    // file input
+    fileEl.addEventListener("change", async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const txt = await f.text();
+      const arr = JSON.parse(txt);
+      DATA = sanitize(arr);
+      msg(`読み込み完了: ${DATA.length}件`);
+      newQuiz();
+    });
 
-addBtn.onclick = () => {
-  const q = questionTag.value.trim();
-  const y = parseInt(yearTag.value.trim());
-  const m = parseInt(monthTag.value.trim());
-  const d = parseInt(dayTag.value.trim());
-  if(!q || isNaN(y)||isNaN(m)||isNaN(d)){
-    alert("正しい入力をしてください");
-    return;
-  }
-  const val = y*10000 + m*100 + d;
-  Questions.push({text:q, value:val, correct:0, appear:0});
-  questionTag.value = yearTag.value = monthTag.value = dayTag.value = "";
-  updateQuestionsTable();
-};
+    // add card
+    document.getElementById("btnAdd").addEventListener("click", () => {
+      const text = document.getElementById("addText").value.trim();
+      const y = parseInt(document.getElementById("addY").value.trim());
+      const m = parseInt(document.getElementById("addM").value.trim() || "1", 10);
+      const d = parseInt(document.getElementById("addD").value.trim() || "1", 10);
+      if (!text || !y || m<1 || m>12 || d<1 || d>31) { msg("入力エラー", false); return; }
+      const val = y*10000 + m*100 + d;
+      DATA.push({text, value: val});
+      msg("追加した。");
+      render();
+    });
 
-saveBtn.onclick = () => {
-  const blob = new Blob([JSON.stringify(Questions, null, 2)], {type: "application/json"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "quiz_data.json";
-  a.click();
-  URL.revokeObjectURL(url);
-};
+    // buttons
+    btnNew.addEventListener("click", newQuiz);
+    btnCheck.addEventListener("click", check);
+    btnReveal.addEventListener("click", reveal);
+    yearOnlyMode.addEventListener("change", render);
+    hideDate.addEventListener("change", render);
 
-let deck = [], board = [], currentCard = null, gameActive = false, score = 0;
+    // sanitize data
+    function sanitize(arr){
+      return arr.filter(x=>x && typeof x.value==="number" && typeof x.text==="string")
+                .map(x=>({text:x.text, value: normalize(x.value)}))
+                .filter(x=>x.value!==null)
+                .sort((a,b)=>a.value-b.value);
+    }
+    function normalize(v){
+      let s = String(v).replace(/\D/g, "");
+      if (s.length===7) s = "0"+s;      // pad year
+      if (s.length!==8) return null;
+      const y = +s.slice(0,4), m = +s.slice(4,6), d = +s.slice(6,8);
+      if (m<1 || m>12 || d<1 || d>31) return null;
+      return +(s);
+    }
 
-function startGame(){
-  if(Questions.length < 2){
-    alert("最低2枚必要です");
-    switchSection('admin');
-    return;
-  }
-  navBar.style.display = 'none';
-  deck = [...Questions].sort(() => Math.random() - 0.5);
-  board = [deck.shift()];
-  score = 0;
-  gameActive = true;
-  messageDiv.textContent = "";
-  renderBoard();
-  showNextCard();
-}
-
-function showNextCard(){
-  if(deck.length === 0){
-    messageDiv.textContent = "クリア！スコア: " + score;
-    gameActive = false;
-    hand.innerHTML = "";
-    navBar.style.display = 'flex';
-    updateQuestionsTable();
-    return;
-  }
-  currentCard = deck.shift();
-  currentCard.appear++;
-  hand.innerHTML = "";
-  hand.appendChild(createCardElement(currentCard));
-}
-
-function createSlot(index){
-  const slot = document.createElement("div");
-  slot.className = "slot";
-  slot.textContent = " ";
-  slot.onclick = () => insertAt(index, slot);
-  return slot;
-}
-
-function renderBoard(){
-  boardDiv.innerHTML = "";
-  boardDiv.appendChild(createSlot(0));
-  board.forEach((card, i)=>{
-    boardDiv.appendChild(createCardElement(card));
-    boardDiv.appendChild(createSlot(i+1));
-  });
-}
-
-function createCardElement(obj){
-  const div = document.createElement("div");
-  div.className = "card";
-  div.textContent = obj.text;
-  div.dataset.value = obj.value;
-  return div;
-}
-
-function animateCardMove(cardElem, targetElem, done){
-  const from = cardElem.getBoundingClientRect();
-  const to = targetElem.getBoundingClientRect();
-  const clone = cardElem.cloneNode(true);
-  clone.style.position = "fixed";
-  clone.style.left = from.left + "px";
-  clone.style.top = from.top + "px";
-  clone.style.margin = 0;
-  clone.style.zIndex = 1000;
-  document.body.appendChild(clone);
-  const dx = to.left - from.left;
-  const dy = to.top - from.top;
-  clone.animate([{transform:"translate(0,0)"},{transform:`translate(${dx}px,${dy}px)`}], {
-    duration:600,easing:"ease"
-  }).onfinish = () => {
-    document.body.removeChild(clone);
-    done();
-  };
-}
-
-/*
- * ✨ 正しい位置を赤くハイライトする補助関数
- */
-function highlightCorrectSlot(index){
-  const slots = [...boardDiv.querySelectorAll('.slot')];
-  if(slots[index]){
-    slots[index].classList.add('correct');
-  }
-}
-
-function insertAt(index, slotElem){
-  if(!gameActive || !currentCard) return;
-  slotElem.onclick = null;
-
-  const prev = board[index-1];
-  const next = board[index];
-  const v = currentCard.value;
-  const okPrev = !prev || prev.value <= v;
-  const okNext = !next || v <= next.value;
-
-  if(!okPrev || !okNext){
-    /* ❌ 不正解の処理: クリックしたスロットを淡い赤にし、正しいスロットを点滅させる */
-    slotElem.classList.add('wrong');
-
-    // 正しい挿入インデックスを算出
-    let correctIndex = board.findIndex(c => c.value > v);
-    if(correctIndex === -1) correctIndex = board.length;
-    highlightCorrectSlot(correctIndex);
-
-    messageDiv.textContent = "不正解！ゲーム終了。スコア: " + score;
-    gameActive = false;
-    hand.innerHTML = "";
-    navBar.style.display = 'flex';
-    updateQuestionsTable();
-    return;
-  }
-
-  const cardElem = hand.querySelector(".card");
-  animateCardMove(cardElem, slotElem, () => {
-    board.splice(index, 0, currentCard);
-    currentCard.correct++;
-    score++;
-    messageDiv.textContent = "正解！現在のスコア: " + score;
-    renderBoard();
-    showNextCard();
-    updateQuestionsTable();
-  });
-}
-</script>
+    // default dataset fetch
+    fetch("middle_school_history.json").then(r=>{
+      if (!r.ok) throw new Error("no default");
+      return r.json();
+    }).then(arr=>{
+      DATA = sanitize(arr);
+      msg(`デフォ読み込み: ${DATA.length}件`);
+      newQuiz();
+    }).catch(()=>{
+      msg("デフォJSONを読み込めなかった。右上から投入して。", false);
+    });
+  </script>
 </body>
 </html>
