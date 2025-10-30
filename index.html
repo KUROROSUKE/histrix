@@ -243,13 +243,13 @@
 
     // sanitize data
     function sanitize(arr){
-      return arr.filter(x=>x && typeof x.value==="number" && typeof x.text==="string")
+      return arr.filter(x=>x && (typeof x.value==="number" || typeof x.value==="string") && typeof x.text==="string")
                 .map(x=>({text:x.text, value: normalize(x.value)}))
                 .filter(x=>x.value!==null)
                 .sort((a,b)=>a.value-b.value);
     }
     function normalize(v){
-      let s = String(v).replace(/\D/g, "");
+      let s = String(v).trim(); s = s.replace(/[^0-9]/g, '');
       if (s.length===7) s = "0"+s;      // pad year
       if (s.length!==8) return null;
       const y = +s.slice(0,4), m = +s.slice(4,6), d = +s.slice(6,8);
