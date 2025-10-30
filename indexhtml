@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>カード並べゲーム</title>
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <style>
+    body{font-family:sans-serif;margin:0;display:flex;flex-direction:column;min-height:100vh;padding-bottom:56px;}
+    main{flex:1;overflow:auto;padding:16px;}
+    #adminSection,#gameSection{max-width:900px;margin:0 auto;}
+    nav{position:fixed;bottom:0;left:0;width:100%;height:56px;display:flex;background:#333;color:#fff;}
+    nav button{flex:1;background:none;border:none;color:#fff;font-size:1rem;padding:12px 0;cursor:pointer;}
+    nav button.active,nav button:hover{background:#555;}
+    #controls{margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+    #controls input,#controls button{font-size:1rem;padding:6px 12px;min-width:120px;box-sizing:border-box;}
+    table{border-collapse:collapse;width:100%;}
+    th,td{border:1px solid #999;padding:4px;text-align:center;}
+    thead{background:#def;}
+    #board{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;min-height:64px;}
+    .card{padding:12px 16px;border:2px solid #333;border-radius:8px;background:#fff;min-width:140px;text-align:center;font-weight:bold;position:relative;}
+    .slot{width:20px;height:52px;border:2px dashed #aaa;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .3s;}
+    .slot:hover{background:#eef;}
+    .slot.wrong{background:#fdd;}
+    .slot.correct{background:#88f;}
+    #hand{display:flex;justify-content:center;margin-top:24px;min-height:80px;}
+    #hand .card{background:#ffd;cursor:default;}
+    .btn-danger{color:red;cursor:pointer;}
+  </style>
+</head>
+<body>
+<main>
+  <section id="adminSection">
+    <h1>クイズ編集</h1>
+    <div id="controls">
+      <input id="question" placeholder="カードのテキスト">
+      <input id="year" placeholder="年 (例: 1945)">
+      <input id="month" placeholder="月 (空→1)">
+      <input id="day" placeholder="日 (空→1)">
+      <button id="addBtn">追加</button>
+      <button id="saveBtn">保存</button>
+      <button id="loadBtn">読込</button>
+      <input type="file" id="loadFile" accept=".json" style="display:none;">
+      <input id="loadUrl" placeholder="JSONのURL" style="min-width:300px;" value="https://kurorosuke.github.io/histrix/history.json">
+      <button id="loadFromUrlBtn">URL読込</button>
+    </div>
+    <table>
+      <thead><tr><th>カード</th><th>日付</th><th>正答率</th><th>削除</th></tr></thead>
+      <tbody id="questions_body"></tbody>
+    </table>
+  </section>
+
+  <section id="gameSection" style="display:none;">
+    <h1>カード並べゲーム</h1>
+    <div id="board"></div>
+    <div id="hand"></div>
+    <div id="message"></div>
+  </section>
+</main>
+
+<nav id="bottomNav">
+  <button id="navGame">ゲーム開始</button>
+  <button id="navAdmin" class="active">クイズ編集</button>
+</nav>
+
+<script>
+/* ===== Utility ===== */
+function pad2(n){ return String(n).padStart(2,"0"); }
+function normalizeValue(v){
+  // 8桁数字に正規化。数値/文字列どちらもOK。月日が不正ならnull。
+  let s = String(v ?? "").replace(/[^0-9]/g,"");
+  if (s.length===7) s = "0"+s;
+  if (s.length!==8) return null;
+  const y = +s.slice(0,4), m = +s.slice(4,6), d = +s.slice(6,8);
+  if (m<1 || m>12 || d<1 || d>31) return null;
+  return s;
+}
+function dateToString(val){
+  const s = typeof val==="number" ? String(val).padStart(8,"0") : String(val);
+  const y = s.slice(0,4);
+  const m = parseInt(s.slice(4,6),10);
+  const d = parseInt(s.slice(6,8),10);
+  return `${y}年${m}月${d}日`;
+}
+function sanitize(arr){
+  return Array.isArray(arr) ? arr
+    .filter(x => x && typeof x.text==="string" && (typeof x.value==="string" || typeof x.value==="number"))
+    .map(x => ({ text: x.text, value: normalizeValue(x.value), correct: +x.correct||0, appear: +x.appear||0 }))
+    .filter(x => x.value !== null)
+    .sort((a,b)=> a.value.localeCompare(b.value))
+    : [];
+}
+
+/* ===== State ===== */
+let Questions = [];
+let deck = [], board = [], currentCard = null, gameActive = false, score = 0;
+
+/* ===== DOM ===== */
+const questionTag = document.getElementById("question");
+const yearTag = document.getElementById("year");
+const monthTag = document.getElementById("month");
+const dayTag = document.getElementById("day");
+const addBtn = document.getElementById("addBtn");
+const saveBtn = document.getElementById("saveBtn");
+const loadBtn = document.getElementById("loadBtn");
+const loadFile = document.getElementById("loadFile");
+const loadUrl = document.getElementById("loadUrl");
+const loadFromUrlBtn = document.getElementById("loadFromUrlBtn");
+const tableBody = document.getElementById("questions_body");
+const hand = document.getElementById("hand");
+const boardDiv = document.getElementById("board");
+const messageDiv = document.getElementById("message");
+
+const navBar = document.getElementById("bottomNav");
+const navGame = document.getElementById("navGame");
+const navAdmin = document.getElementById("navAdmin");
+const adminSection = document.getElementById("adminSection");
+const gameSection = document.getElementById("gameSection");
+
+/* ===== Nav ===== */
+navGame.onclick = () => switchSection('game');
+navAdmin.onclick = () => switchSection('admin');
+loadBtn.onclick = () => loadFile.click();
+
+function switchSection(target){
+  if(target === 'admin'){
+    adminSection.style.display = 'block';
+    gameSection.style.display = 'none';
+    navAdmin.classList.add('active');
+    navGame.classList.remove('active');
+    navBar.style.display = 'flex';
+    updateQuestionsTable();
+  } else {
+    adminSection.style.display = 'none';
+    gameSection.style.display = 'block';
+    navAdmin.classList.remove('active');
+    navGame.classList.add('active');
+    startGame();
+  }
+}
+
+/* ===== Load/Save ===== */
+loadFile.onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      Questions = sanitize(data);
+      alert(`読み込み完了: ${Questions.length}件`);
+      updateQuestionsTable();
+    } catch (e) {
+      alert("JSON読み込み失敗");
+    }
+  };
+  reader.readAsText(file);
+};
+
+loadFromUrlBtn.onclick = async () => {
+  const url = loadUrl.value.trim();
+  if (!url) { alert("URLを入力してください"); return; }
+  try {
+    const res = await fetch(url, {cache:"no-store"});
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    Questions = sanitize(data);
+    alert(`URLからの読み込み完了: ${Questions.length}件`);
+    updateQuestionsTable();
+  } catch (err) {
+    alert("読み込みエラー: " + err.message);
+  }
+};
+
+saveBtn.onclick = () => {
+  const blob = new Blob([JSON.stringify(Questions, null, 2)], {type: "application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "quiz_data.json";
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+/* ===== Admin: add / delete ===== */
+function updateQuestionsTable(){
+  tableBody.innerHTML = "";
+  Questions.forEach((q, i)=>{
+    const rate = q.appear > 0 ? `${Math.round(q.correct / q.appear * 100)}% (${q.appear})` : "-";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${q.text}</td>
+      <td>${dateToString(q.value)}</td>
+      <td>${rate}</td>
+      <td><span class="btn-danger" onclick="deleteQuestion(${i})">削除</span></td>`;
+    tableBody.appendChild(tr);
+  });
+}
+
+function deleteQuestion(index){
+  if (confirm("削除しますか？")) {
+    Questions.splice(index, 1);
+    updateQuestionsTable();
+  }
+}
+
+addBtn.onclick = () => {
+  const q = questionTag.value.trim();
+  const y = parseInt(yearTag.value.trim(), 10);
+  const m = monthTag.value.trim()==="" ? 1 : parseInt(monthTag.value.trim(), 10);
+  const d = dayTag.value.trim()==="" ? 1 : parseInt(dayTag.value.trim(), 10);
+  if(!q || isNaN(y) || isNaN(m) || isNaN(d)){
+    alert("正しい入力をしてください");
+    return;
+  }
+  if(m<1 || m>12 || d<1 || d>31){
+    alert("月日は範囲外");
+    return;
+  }
+  const value = String(y).padStart(4,"0")+pad2(m)+pad2(d);
+  const valNormalized = normalizeValue(value);
+  if(valNormalized===null){
+    alert("日付形式エラー");
+    return;
+  }
+  Questions.push({text:q, value:valNormalized, correct:0, appear:0});
+  questionTag.value = yearTag.value = monthTag.value = dayTag.value = "";
+  updateQuestionsTable();
+};
+
+/* ===== Game ===== */
+function startGame(){
+  if(Questions.length < 2){
+    alert("最低2枚必要です");
+    switchSection('admin');
+    return;
+  }
+  navBar.style.display = 'none';
+  deck = [...Questions].sort(() => Math.random() - 0.5);
+  board = [deck.shift()];
+  score = 0;
+  gameActive = true;
+  messageDiv.textContent = "";
+  renderBoard();
+  showNextCard();
+}
+
+function showNextCard(){
+  if(deck.length === 0){
+    messageDiv.textContent = "クリア！スコア: " + score;
+    gameActive = false;
+    hand.innerHTML = "";
+    navBar.style.display = 'flex';
+    updateQuestionsTable();
+    return;
+  }
+  currentCard = deck.shift();
+  currentCard.appear++;
+  hand.innerHTML = "";
+  hand.appendChild(createCardElement(currentCard));
+}
+
+function createSlot(index){
+  const slot = document.createElement("div");
+  slot.className = "slot";
+  slot.textContent = " ";
+  slot.onclick = () => insertAt(index, slot);
+  return slot;
+}
+
+function renderBoard(){
+  boardDiv.innerHTML = "";
+  boardDiv.appendChild(createSlot(0));
+  board.forEach((card, i)=>{
+    boardDiv.appendChild(createCardElement(card));
+    boardDiv.appendChild(createSlot(i+1));
+  });
+}
+
+function createCardElement(obj){
+  const div = document.createElement("div");
+  div.className = "card";
+  div.textContent = obj.text;
+  div.dataset.value = obj.value;
+  return div;
+}
+
+function animateCardMove(cardElem, targetElem, done){
+  const from = cardElem.getBoundingClientRect();
+  const to = targetElem.getBoundingClientRect();
+  const clone = cardElem.cloneNode(true);
+  clone.style.position = "fixed";
+  clone.style.left = from.left + "px";
+  clone.style.top = from.top + "px";
+  clone.style.margin = 0;
+  clone.style.zIndex = 1000;
+  document.body.appendChild(clone);
+  const dx = to.left - from.left;
+  const dy = to.top - from.top;
+  clone.animate([{transform:"translate(0,0)"},{transform:`translate(${dx}px,${dy}px)`}], {
+    duration:600,easing:"ease"
+  }).onfinish = () => {
+    document.body.removeChild(clone);
+    done();
+  };
+}
+
+function highlightCorrectSlot(index){
+  const slots = [...boardDiv.querySelectorAll('.slot')];
+  if(slots[index]){
+    slots[index].classList.add('correct');
+    setTimeout(()=> slots[index].classList.remove('correct'), 1200);
+  }
+}
+
+function insertAt(index, slotElem){
+  if(!gameActive || !currentCard) return;
+  slotElem.onclick = null;
+
+  const prev = board[index-1];
+  const next = board[index];
+  const v = currentCard.value;
+  const okPrev = !prev || prev.value <= v;
+  const okNext = !next || v <= next.value;
+
+  if(!okPrev || !okNext){
+    slotElem.classList.add('wrong');
+    let correctIndex = board.findIndex(c => c.value > v);
+    if(correctIndex === -1) correctIndex = board.length;
+    highlightCorrectSlot(correctIndex);
+    messageDiv.textContent = "不正解！";
+    // Delay showing the game over state
+    const cardElem = hand.querySelector(".card");
+    if (cardElem) {
+      cardElem.style.opacity = "0.7";
+      cardElem.style.background = "#fdd";
+    }
+    setTimeout(() => {
+      messageDiv.textContent = "ゲーム終了。スコア: " + score;
+      gameActive = false;
+      hand.innerHTML = "";
+      navBar.style.display = 'flex';
+      updateQuestionsTable();
+    }, 1800);
+    return;
+  }
+
+  const cardElem = hand.querySelector(".card");
+  animateCardMove(cardElem, slotElem, () => {
+    board.splice(index, 0, currentCard);
+    currentCard.correct++;
+    score++;
+    messageDiv.textContent = "正解！現在のスコア: " + score;
+    renderBoard();
+    showNextCard();
+    updateQuestionsTable();
+  });
+}
+</script>
+</body>
+</html>
